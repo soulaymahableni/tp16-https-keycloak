@@ -1,0 +1,95 @@
+# Prérequis (jamais dans Git) :
+#   kubectl -n tp16 create secret generic oauth2-proxy \
+#     --from-literal=client-secret=<secret-du-client> \
+#     --from-literal=cookie-secret="$(openssl rand -base64 32 | tr -- '+/' '-_' | head -c 32)"
+#   kubectl -n tp16 create secret generic lab-ca-public --from-file=ca.crt=lab-ca.crt
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: tp16
+  labels:
+    app: oauth2-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
+          args:
+            - --provider=keycloak-oidc
+            - --client-id=whoami
+            - --oidc-issuer-url=https://keycloak.lab.local/realms/lab
+            - --redirect-url=https://whoami.lab.local/oauth2/callback
+            - --provider-ca-file=/etc/lab-ca/ca.crt      # faire confiance à la CA de lab
+            - --upstream=http://whoami.tp16.svc.cluster.local:80
+            - --http-address=0.0.0.0:4180
+            - --reverse-proxy=true
+            - --email-domain=*
+            - --cookie-secure=true
+            - --code-challenge-method=S256               # PKCE
+            - --skip-provider-button=true
+            # TODO complété : seuls les rôles developer et admin passent (sinon 403)
+            - --allowed-role=developer
+            - --allowed-role=admin
+            # En-têtes d'identité : X-Forwarded-User/Email vers whoami,
+            # X-Auth-Request-User/Email dans la réponse
+            - --pass-user-headers=true
+            - --set-xauthrequest=true
+          env:
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+          volumeMounts:
+            - name: lab-ca
+              mountPath: /etc/lab-ca
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: lab-ca
+          secret:
+            secretName: lab-ca-public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+  namespace: tp16
+spec:
+  selector:
+    app: oauth2-proxy
+  ports:
+    - name: http
+      port: 4180
+      targetPort: http

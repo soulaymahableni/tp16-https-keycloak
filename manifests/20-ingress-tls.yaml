@@ -1,0 +1,31 @@
+# Ingress HTTPS : cert-manager voit l'annotation, crée le Certificate whoami-tls,
+# le fait signer par le ClusterIssuer lab-ca et remplit le Secret whoami-tls.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami
+  namespace: tp16
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+    cert-manager.io/duration: 2160h       # 90 jours, comme Let's Encrypt
+    cert-manager.io/renew-before: 720h    # renouvelé 30 jours avant l'expiration
+    # TODO complété : entrée websecure (443) uniquement
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  # TODO complété : bloc tls
+  tls:
+    - hosts:
+        - whoami.lab.local
+      secretName: whoami-tls
+  rules:
+    - host: whoami.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  number: 80

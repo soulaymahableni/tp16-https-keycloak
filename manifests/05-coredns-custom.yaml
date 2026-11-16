@@ -1,0 +1,17 @@
+# Résolution DNS interne : les Pods (oauth2-proxy) doivent joindre
+# https://keycloak.lab.local, qui n'existe dans aucun DNS.
+# Plutôt qu'une IP de nœud à adapter, on réécrit le nom vers le Service
+# Traefik : la requête passe par l'Ingress HTTPS, comme depuis l'extérieur.
+# K3s importe automatiquement les clés *.override dans le Corefile.
+# Après application : kubectl -n kube-system rollout restart deploy/coredns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  lab.override: |
+    rewrite stop {
+      name regex ^keycloak\.lab\.local\.$ traefik.kube-system.svc.cluster.local.
+      answer name ^traefik\.kube-system\.svc\.cluster\.local\.$ keycloak.lab.local.
+    }
